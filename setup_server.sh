@@ -112,20 +112,39 @@ else
 fi
 
 # Настройка порта для SSH
-while true; do
-    echo "Для повышения безопасности сервера рекомендуется изменить стандартный порт SSH."
-    read -p "Введите новый порт SSH (рекомендуется диапазон от 1024 до 65535): " ssh_port
-    if [[ "$ssh_port" =~ ^[0-9]+$ ]] && ((ssh_port >= 1024 && ssh_port <= 65535)); then
-        break
+echo -e "\nДля повышения безопасности сервера рекомендуется изменить стандартный порт SSH."
+ssh_ready=false
+
+while [[ "$ssh_ready" != "true" ]]; do
+    read -p "Введите новый порт SSH (1024–65535): " ssh_port
+
+    # Валидация диапазона
+    if ! [[ "$ssh_port" =~ ^[0-9]+$ ]] || ((ssh_port < 1024 || ssh_port > 65535)); then
+        echo "\nНекорректный диапазон. Попробуйте снова."
+        continue
+    fi
+
+    # Настройка конфигурации
+    if grep -q "^#\?Port " /etc/ssh/sshd_config; then
+        sed -i "s/^#\?Port .*/Port $ssh_port/" /etc/ssh/sshd_config
     else
-        echo "Пожалуйста, введите корректный порт в диапазоне от 1024 до 65535."
+        echo "Port $ssh_port" >> /etc/ssh/sshd_config
+    fi
+    
+    # Перезапуск службы
+    systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null
+    sleep 2
+
+    # Проверяем, что SSH действительно слушает новый порт
+    if ss -tlnp | grep -q ":$ssh_port "; then
+        echo "\nSSH успешно запущен на порту $ssh_port."
+        ssh_ready=true
+    else
+        echo "\nSSH не поднялся на порту $ssh_port."
+        echo "\nВозможные причины: порт занят, заблокирован файрволом или синтаксическая ошибка в sshd_config."
+        echo "\nПопробуйте ввести другой порт."
     fi
 done
-
-# Настройка порта SSH в конфигурации
-sed -i "s/^#Port 22/Port $ssh_port/" /etc/ssh/sshd_config
-systemctl restart ssh
-echo -e "\nПорт SSH успешно изменен на $ssh_port."
 
 # Настройка firewall с UFW
 echo "Настройка фаервола (ufw)..."

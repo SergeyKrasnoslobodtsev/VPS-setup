@@ -226,15 +226,10 @@ if [[ "${enable_masking,,}" =~ ^(да|y|yes)$ ]]; then
     done
 
     # 2. Установка зависимостей
-    apt install curl gnupg2 ca-certificates lsb-release ubuntu-keyring ssl-cert nginx >/dev/null 2>&1 || {
+    apt install -y curl gnupg2 ca-certificates lsb-release ubuntu-keyring ssl-cert nginx >/dev/null 2>&1 || {
         echo -e "\nОшибка установки Nginx. Проверьте подключение к репозиториям."
         exit 1
     }
-    
-    # apt-get install -y nginx ssl-cert >/dev/null 2>&1 || {
-    #     echo -e "\nОшибка установки Nginx. Проверьте подключение к репозиториям."
-    #     exit 1
-    # }
 
     # 3. Настройка Nginx
     cat > /etc/nginx/sites-available/default <<'EOF'

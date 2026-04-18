@@ -200,11 +200,82 @@ maxretry = $max_attempts
 bantime = $bantime
 findtime = $findtime
 EOL
-
     # Перезапуск fail2ban для применения изменений
     systemctl restart fail2ban
 
     echo -e "\nЗащита от брутфорса с помощью fail2ban настроена и активирована."
 else
     echo -e "\nЗащита от брутфорса с помощью fail2ban не будет установлена."
+fi
+
+
+read -p "Хотите настроить маскировку под обычный веб-хостинг? (да/нет): " enable_masking
+
+if [[ "${enable_masking,,}" =~ ^(да|y|yes)$ ]]; then
+    echo -e "\nНастройка маскировки сервера"
+
+    # 1. Запрос порта AmneziaWG с валидацией
+    while true; do
+        read -p "Введите порт для AmneziaWG (по умолчанию 51820): " input_wg_port
+        WG_PORT="${input_wg_port:-51820}"
+        if [[ "$WG_PORT" =~ ^[0-9]+$ ]] && ((WG_PORT >= 1024 && WG_PORT <= 65535)); then
+            break
+        else
+            echo -e "n\Некорректный порт. Допустимый диапазон: 1024-65535"
+        fi
+    done
+
+    # 2. Установка зависимостей
+    apt-get install -y nginx ssl-cert >/dev/null 2>&1 || {
+        echo -e "\nОшибка установки Nginx. Проверьте подключение к репозиториям."
+        exit 1
+    }
+
+    # 3. Настройка Nginx
+    cat > /etc/nginx/sites-available/default <<'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+
+    ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
+    ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    server_tokens off;
+    server_name _;
+    default_type text/html;
+
+    location / {
+        return 403 "<!DOCTYPE html><html><head><title>403 Forbidden</title></head><body style='font-family:sans-serif;text-align:center;padding:50px;background:#f5f5f5;'><h1>403 Forbidden</h1><p>nginx server</p><hr><center>Access denied by server configuration.</center></body></html>";
+    }
+    location ~ /\. { deny all; }
+    location ~* \.(php|asp|aspx|jsp|cgi|pl|py)$ { deny all; }
+}
+EOF
+
+    # 4. Проверка и запуск Nginx
+    if ! nginx -t >/dev/null 2>&1; then
+        echo -e "\nОшибка синтаксиса Nginx. Проверьте конфигурацию."
+        exit 1
+    fi
+    systemctl restart nginx
+    systemctl enable nginx >/dev/null 2>&1
+
+    # 5. Добавляем порты в уже работающий UFW
+    echo -e "\nОбновляем правила файрвола..."
+    ufw allow "$ssh_port"/tcp >/dev/null 2>&1
+    ufw allow "${WG_PORT}"/udp >/dev/null 2>&1
+    ufw allow 80/tcp >/dev/null 2>&1
+    ufw allow 443/tcp >/dev/null 2>&1
+    ufw reload >/dev/null 2>&1
+
+    echo -e "\nМаскировка успешно настроена"
+    echo -e "   🌐 Веб-заглушка активна на портах 80/443"
+    echo -e "   🛡️ AmneziaWG будет работать на UDP/${WG_PORT}"
+    echo -e "   🔒 Доступ разрешён только по SSH (порт ${ssh_port:-22}) и указанным портам"
+else
+    echo -e "\nМаскировка пропущена. Сервер останется в режиме 'по умолчанию'."
 fi

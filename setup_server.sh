@@ -105,6 +105,7 @@ if [[ "$create_new_user" =~ ^(да|y|yes)$ ]]; then
     useradd -m -s /bin/bash "$username"
     echo "$username:$password" | chpasswd
     usermod -aG sudo "$username"
+    echo "${username} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${username}
 
     echo -e "\nПользователь $username успешно создан и добавлен в группу sudo."
 else
